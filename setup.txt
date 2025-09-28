@@ -1,0 +1,8 @@
+CMAKE_PREFIX_PATH="C:\Users\yura\AppData\Local\Programs\Python\Python311\Lib\site-packages\pybind11\share\cmake\pybind11"
+
+
+cmake -S . -B build
+cmake build
+cmake --build build
+
+
