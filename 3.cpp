@@ -8,27 +8,41 @@
 
 const double EPSILON = 1e-9;
 constexpr double PI = 3.14159265358979323846;
+static const double POINT_EQ_EPS = 1e-9;
 
-class Point
-{
+bool almostEqual(double a, double b, double eps = POINT_EQ_EPS) {
+    return std::abs(a - b) <= eps;
+}
+
+
+class Point {
 public:
     double x;
     double y;
 
     Point() : x(0), y(0) {}
     Point(double x, double y) : x(x), y(y) {}
+
+    bool operator==(const Point &other) const {
+        return almostEqual(x, other.x) && almostEqual(y, other.y);
+    }
+    bool operator!=(const Point &other) const {
+        return !(*this == other);
+    }
+
+    // strict-weak-ordering compatible with operator==
+    bool operator<(const Point &other) const {
+        if (x + POINT_EQ_EPS < other.x) return true;
+        if (other.x + POINT_EQ_EPS < x) return false;
+        if (y + POINT_EQ_EPS < other.y) return true;
+        return false;
+    }
+
     void print() const
     {
         std::cout << "(" << x << ", " << y << ")\n";
     }
-    bool operator==(const Point &other) const
-    {
-        return x == other.x && y == other.y;
-    }
-    bool operator!=(const Point &other) const
-    {
-        return x != other.x || y != other.y;
-    }
+
     Point operator-(const Point &other) const
     {
         return Point(x - other.x, y - other.y);
@@ -50,12 +64,7 @@ public:
         os << "(" << obj.x << ", " << obj.y << ")";
         return os;
     }
-    bool operator<(const Point &other) const
-    {
-        if (std::abs(x - other.x) > EPSILON)
-            return x < other.x;
-        return y < other.y;
-    }
+
 };
 class Point3
 {
@@ -376,31 +385,26 @@ public:
         return Edge(edgeStart,edgeEnd);
     }
 };
-
+static void ensureCCW(Triangle &t)
+{
+    // orient(a,b,c) > 0 -> counterclockwise
+    if (orient(t.a, t.b, t.c) < 0) {
+        // swap two vertices to flip orientation
+        std::swap(t.b, t.c);
+    }
+}
 std::vector<Triangle> FlipEdge(const Edge &edge, const Triangle &tri1, const Triangle &tri2)
 {
-    // Find the opposite vertices in each triangle
-    Point opp1, opp2;
-    if (tri1.a != edge.start && tri1.a != edge.end)
-        opp1 = tri1.a;
-    else if (tri1.b != edge.start && tri1.b != edge.end)
-        opp1 = tri1.b;
-    else
-        opp1 = tri1.c;
+    Point opp1 = tri1.oppositeVertex(edge);
+    Point opp2 = tri2.oppositeVertex(edge);
 
-    if (tri2.a != edge.start && tri2.a != edge.end)
-        opp2 = tri2.a;
-    else if (tri2.b != edge.start && tri2.b != edge.end)
-        opp2 = tri2.b;
-    else
-        opp2 = tri2.c;
-
-    // Create the new triangles formed by flipping the edge
-    Triangle newTri1(opp1, opp2, edge.start);
-    Triangle newTri2(opp1, opp2, edge.end);
-
-    return {newTri1, newTri2};
+    Triangle newT1(opp1, opp2, edge.start);
+    Triangle newT2(opp1, opp2, edge.end);
+    ensureCCW(newT1);
+    ensureCCW(newT2);
+    return {newT1, newT2};
 }
+
 
 class Triangulation
 {
@@ -493,10 +497,14 @@ public:
             DeleteTriangle(t);
             DeleteTriangle(oppositeT);
 
-            addTriangle(Triangle(t.a, t.b, point));
-            addTriangle(Triangle(oppositeVertex, t.b, point));
-            addTriangle(Triangle(oppositeVertex, t.c, point));
-            addTriangle(Triangle(t.c, t.a, point));
+            // after DeleteTriangle(t) and DeleteTriangle(oppositeT)
+Triangle t1(t.a, t.b, point);
+Triangle t2(oppositeVertex, t.b, point);
+Triangle t3(oppositeVertex, t.c, point);
+Triangle t4(t.c, t.a, point);
+ensureCCW(t1); ensureCCW(t2); ensureCCW(t3); ensureCCW(t4);
+addTriangle(t1); addTriangle(t2); addTriangle(t3); addTriangle(t4);
+
 
             LegalizeEdge(point, Edge(t.a, t.b));
             LegalizeEdge(point, Edge(t.b, oppositeVertex));
@@ -695,27 +703,32 @@ public:
 
             // test: is opp inside circumcircle of triWithPoint?
             if (triWithPoint.IsPointInTriangleCircle(opp))
-            {
-                // flip
-                Point opp1 = triWithPoint.oppositeVertex(edge); // opposite in triWithPoint
-                Point opp2 = otherTri.oppositeVertex(edge);     // opposite in otherTri
+{
+    // compute opp vertices
+    Point opp1 = triWithPoint.oppositeVertex(edge);
+    Point opp2 = otherTri.oppositeVertex(edge);
 
-                // remove old triangles
-                DeleteTriangle(triWithPoint);
-                DeleteTriangle(otherTri);
+    // remove the two triangles
+    DeleteTriangle(triWithPoint);
+    DeleteTriangle(otherTri);
 
-                // create flipped triangles (edge becomes opp1-opp2)
-                Triangle newT1(opp1, opp2, edge.start);
-                Triangle newT2(opp1, opp2, edge.end);
-                addTriangle(newT1);
-                addTriangle(newT2);
+    // create flipped triangles, ensure orientation, and add
+    Triangle newT1(opp1, opp2, edge.start);
+    Triangle newT2(opp1, opp2, edge.end);
+    ensureCCW(newT1);
+    ensureCCW(newT2);
 
-                // After flip, edges that might become illegal are:
-                st.push(Edge(opp1, edge.start));
-                st.push(Edge(opp1, edge.end));
-                st.push(Edge(opp2, edge.start));
-                st.push(Edge(opp2, edge.end));
-            }
+    addTriangle(newT1);
+    addTriangle(newT2);
+
+    // Push only edges adjacent to the new diagonal that might now be illegal.
+    // (exclude the new diagonal opp1-opp2 itself, it will be checked via neighboring edges in future iterations)
+    st.push(Edge(opp1, edge.start));
+    st.push(Edge(opp1, edge.end));
+    st.push(Edge(opp2, edge.start));
+    st.push(Edge(opp2, edge.end));
+}
+
         }
     }
 

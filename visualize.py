@@ -50,7 +50,7 @@ class DelaunayGUI:
         self.show_edges = True
         self.show_circumcircles = False
         self.show_boundary_highlight = False
-
+        self._skip_recompute = False
         # Boundary path (list of (x,y)) when user requests highlight
         self.boundary_path = None
         self.boundary_artists = []
@@ -202,7 +202,7 @@ class DelaunayGUI:
             print("Insert point parse error:", e)
 
     def enforce_quality_from_inputs(self, event):
-        """Read min angle & max area; call C++ enforce routine"""
+        """Read min angle & max area; call C++ enforce routine and update points/triangles"""
         try:
             a_str = self.tb_angle.text.strip()
             ar_str = self.tb_area.text.strip()
@@ -215,27 +215,53 @@ class DelaunayGUI:
                 print("No triangulation available to enforce quality on")
                 return
 
-            # call the convenience wrapper bound in C++
-        
-            # fallback: set params and call enforceQuality directly
+            # Set parameters and call enforceQuality on the existing triangulation object.
             try:
                 self.triangulation_obj.setMinAngle(angle)
                 self.triangulation_obj.setMaxArea(area)
-                prea=self.triangulation_obj.enforceQuality()
-                # print(prea)
-                self.triangles = []
-                self.points=[]
-                for tri in prea:
-                    indices = []
-                    for vertex in [tri.a, tri.b, tri.c]:
-                        self.points.append(vertex)
-                        for i, (px, py) in enumerate(self.points):
-                            if px == vertex.x and py == vertex.y:
-                                indices.append(i)
-                                break
-                    if len(indices) == 3:
-                        self.triangles.append(indices)
-                self.points=list(set(self.points))
+
+                # The C++ method may modify the triangulation in-place and possibly return a list.
+                # We call it and then re-read triangles/vertices from the triangulation object.
+                _ret = self.triangulation_obj.enforceQuality()
+
+                # Read triangles from the (now modified) triangulation object
+                try:
+                    cpp_triangles = self.triangulation_obj.getTriangles()
+                except Exception as ee:
+                    print("getTriangles failed after enforceQuality:", ee)
+                    cpp_triangles = []
+
+                # Build a new unique points list from vertices present in returned triangles.
+                new_points = []
+                index_map = {}  # (x,y) -> index in new_points
+                new_triangles = []
+
+                for tri in cpp_triangles:
+                    # ensure a, b, c exist on tri (depending on your binding names)
+                    verts = (tri.a, tri.b, tri.c)
+                    tri_idxs = []
+                    for v in verts:
+                        key = (float(v.x), float(v.y))
+                        if key not in index_map:
+                            index_map[key] = len(new_points)
+                            new_points.append(key)
+                        tri_idxs.append(index_map[key])
+                    if len(tri_idxs) == 3:
+                        new_triangles.append(tri_idxs)
+
+                # Replace current points/triangles with the enforced version
+                if new_points:
+                    self.points = new_points
+                    self.triangles = new_triangles
+                else:
+                    # If no triangles returned, fall back to recomputing from points
+                    print("Warning: enforceQuality produced no triangles; keeping current points/triangles")
+
+                # Prevent immediate recompute in update_plot (compute_triangulation rebuilds from self.points
+                # which may otherwise re-create the triangulation differently). We'll skip one recompute and
+                # let plot use the triangles we just extracted.
+                self._skip_recompute = True
+
             except Exception as e:
                 print("enforceQuality call failed:", e)
 
@@ -243,7 +269,7 @@ class DelaunayGUI:
             self.update_plot()
         except Exception as e:
             print("Enforce quality parse error:", e)
-
+            
     def highlight_boundary_from_inputs(self, event):
         """Parse start/end, compute boundary via C++ and draw it"""
         try:
@@ -327,7 +353,13 @@ class DelaunayGUI:
 
     def update_plot(self, event=None):
         """Update the plot with current points and triangulation"""
-        self.compute_triangulation()
+        # If a previous operation (enforceQuality) already produced an authoritative
+        # triangulation/points, skip one recomputation so we don't overwrite the C++ result.
+        if self._skip_recompute:
+            # consume the skip flag and do not call compute_triangulation() this time
+            self._skip_recompute = False
+        else:
+            self.compute_triangulation()
         # Clear old plot elements
         self.clear_plot_elements()
 
