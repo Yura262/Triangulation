@@ -461,7 +461,7 @@ int main() {
         triangulation.addTriangle(superTriangle);
         
         // Insert all points
-        for (const auto& point : points) {
+        circumcircleCenter
             triangulation.InsertPoint(point);
         }
         

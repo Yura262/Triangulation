@@ -27,6 +27,16 @@ public:
     {
         return Point(x - other.x, y - other.y);
     }
+    double dist2(const Point &p2)
+    {
+        double dx = x - p2.x;
+        double dy = y - p2.y;
+        return dx * dx + dy * dy;
+    }
+    friend std::ostream& operator<<(std::ostream& os, const Point& obj) {
+        os <<  "(" << obj.x << ", " << obj.y << ")";
+        return os;
+    }
 };
 class Point3
 {
@@ -56,10 +66,9 @@ public:
     Point3 CrossProduct(const Point3 &v) const
     {
         return {
-        y * v.z - z * v.y,
-        z * v.x - x * v.z,
-        x * v.y - y * v.x
-    };
+            y * v.z - z * v.y,
+            z * v.x - x * v.z,
+            x * v.y - y * v.x};
     }
 };
 class Edge
@@ -68,11 +77,16 @@ public:
     Point start;
     Point end;
     Edge(Point start, Point end) : start(start), end(end) {}
-    
+
     bool operator==(const Edge &other) const
     {
         return (start == other.start && end == other.end) ||
                (start == other.end && end == other.start);
+    }
+    void print() const
+    {
+        start.print();
+        end.print();
     }
 };
 
@@ -90,6 +104,10 @@ public:
         a.print();
         b.print();
         c.print();
+    }
+    friend std::ostream& operator<<(std::ostream& os, const Triangle& obj) {
+        os << "Triangle: "<<obj.a<<" "<< obj.b <<" "<< obj.c << ", \n";
+        return os;
     }
     Point centroid() const
     {
@@ -112,7 +130,33 @@ public:
         double area = std::sqrt(s * (s - ab) * (s - bc) * (s - ca));
         return (ab * bc * ca) / (4 * area);
     }
+    Point circumcircleCenter()const
+    {
+        Point A = a;
+        Point B = b;
+        Point C = c;
+        double d = 2 * (A.x * (B.y - C.y) + B.x * (C.y - A.y) + C.x * (A.y - B.y));
+        if (std::abs(d) < 1e-12)
+        {
+            return Point(0, 0); // collinear case
+        }
+        double ux = ((A.x * A.x + A.y * A.y) * (B.y - C.y) +
+                     (B.x * B.x + B.y * B.y) * (C.y - A.y) +
+                     (C.x * C.x + C.y * C.y) * (A.y - B.y)) /
+                    d;
 
+        double uy = ((A.x * A.x + A.y * A.y) * (C.x - B.x) +
+                     (B.x * B.x + B.y * B.y) * (A.x - C.x) +
+                     (C.x * C.x + C.y * C.y) * (B.x - A.x)) /
+                    d;
+
+        Point center{ux, uy};
+
+        return center;
+    }
+    double radiusOfCircle()const{
+        return circumcircleCenter().dist2(a);
+    }
     bool IsPointInTriangleCircle(const Point &p) const
     {
         Point3 pa(a.x, a.y, a.x * a.x + a.y * a.y);
@@ -120,14 +164,15 @@ public:
         Point3 pc(c.x, c.y, c.x * c.x + c.y * c.y);
 
         double parab = p.x * p.x + p.y * p.y;
-        Point3 N = (pb - pa).CrossProduct(pc - pa); 
-        N.print();
-        double plane = (pa.z-(N.x * (p.x - pa.x) + N.y * (p.y - pa.y)) / N.z);
+        Point3 N = (pb - pa).CrossProduct(pc - pa);
+        // N.print();
+        double plane = (pa.z - (N.x * (p.x - pa.x) + N.y * (p.y - pa.y)) / N.z);
         return parab < plane;
     }
     double SignedArea() const
     {
-        return a.x * (b.y - c.y) - a.y * (b.x - c.x) + 1 * (b.x * c.y - c.x * b.y);
+        return (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y);
+        // a.x * (b.y - c.y) - a.y * (b.x - c.x) + 1 * (b.x * c.y - c.x * b.y);
     }
     bool IsPointOnEdge(const Point &p) const
     {
@@ -153,7 +198,8 @@ public:
             return Edge(c, a);
     }
 
-    Point oppositeVertex(const Edge &edge){
+    Point oppositeVertex(const Edge &edge)
+    {
         if (a != edge.start && a != edge.end)
             return a;
         else if (b != edge.start && b != edge.end)
@@ -161,15 +207,23 @@ public:
         else
             return c;
     }
-    bool containsVertex(const Point &p) const{
+    bool containsVertex(const Point &p) const
+    {
         return p == a || p == b || p == c;
     }
     bool containsEdge(const Edge &edge) const
     {
         return (containsVertex(edge.start) && containsVertex(edge.end));
     }
+    bool IsPointInside(const Point &p) const
+    {
+        double area = std::abs(SignedArea());
+        double area1 = std::abs(Triangle(p, b, c).SignedArea());
+        double area2 = std::abs(Triangle(a, p, c).SignedArea());
+        double area3 = std::abs(Triangle(a, b, p).SignedArea());
 
-
+        return std::abs(area - (area1 + area2 + area3)) < EPSILON;
+    }
 };
 std::vector<Triangle> FlipEdge(const Edge &edge, const Triangle &tri1, const Triangle &tri2)
 {
@@ -205,151 +259,212 @@ public:
     {
         triangles.push_back(triangle);
     };
-
+    std::vector<Point> getPoints()
+    {
+        std::vector<Point> points;
+        for (const auto &t : triangles)
+        {
+            points.push_back(t.a);
+            points.push_back(t.b);
+            points.push_back(t.c);
+        }
+        return points;
+    }
     std::vector<Triangle> getTriangles()
     {
         return triangles;
     };
     void print() const
     {
+        std::cout << "Printing triangulation\n";
         for (const auto &triangle : triangles)
         {
             triangle.print();
         }
+        std::cout << std::endl;
     }
-    void DeleteTriangle(const Triangle &t){
+    void DeleteTriangle(const Triangle &t)
+    {
         triangles.erase(std::remove(triangles.begin(), triangles.end(), t), triangles.end());
     }
-    void InsertPoint(const Point &point)
+    bool test()
     {
-        // 1. Find Triangle containing the point
-        // 2. if point lies on edge remove the edge and make edges to 4 points
-        // 3. else Subdivide the triangle into 3 new triangles - make edges to 3 points
-        // 4. legalize all required edges recursively
-
-        // 1:
-        Triangle t = FindTriangleByPoint(point, triangles[0]);//triangle we inserting into
-
-        // if point on edge
-        // find ajacent triangle
-        // remove edge
-        // make edges to 4 points
-        // legalize them
-        if (t.IsPointOnEdge(point))
+        std::vector<Point> points = getPoints();
+        const double eps = 1e-9; // tolerance
+        for (const auto &t : triangles)
         {
-            Edge CommonEdgeOfTwoTriangles=t.GetEdgeByPoint(point);
-
-            Triangle oppositeT = FindAjasentTriangleByEdge(CommonEdgeOfTwoTriangles, t);
-
-            // Find the opposite vertex in the triangle
-            Point oppositeVertex = oppositeT.oppositeVertex(CommonEdgeOfTwoTriangles);
-
-            DeleteTriangle(t);
-            DeleteTriangle(oppositeT);
-
-            addTriangle(Triangle (t.a, t.b, point));
-            addTriangle(Triangle(oppositeVertex,t.b,  point));
-            addTriangle(Triangle(oppositeVertex, t.c, point));
-            addTriangle(Triangle(t.c, t.a, point));
-
-            LegalizeEdge(point, Edge(t.a, t.b));
-            LegalizeEdge(point, Edge(t.b, oppositeVertex));
-            LegalizeEdge(point, Edge(oppositeVertex,t.c));
-            LegalizeEdge(point, Edge(t.c, t.a));
-            return;
+            Point center=t.circumcircleCenter();
+            double r2=t.radiusOfCircle();
+            if (r2 < 0)
+                continue; // skip collinear
+            
+            for (auto &pi : points)
+            {
+                if (pi == t.a || pi == t.b || pi == t.c)
+                    continue;
+                double d2 = center.dist2(pi);
+                if (std::abs(d2 - r2) < eps)
+                {
+                    std::cout << "Triangle " << t
+                              << " has extra point " << pi
+                              << " on its circumcircle.\n";
+                    return false;
+                            }
+            }
         }
+        return true;
+    }
+void InsertPoint(const Point &point)
+{
+    std::cout << "Inserting point";
+    point.print();
 
-        // else:
+    // 1. Find Triangle containing the point
+    // 2. if point lies on edge remove the edge and make edges to 4 points
+    // 3. else Subdivide the triangle into 3 new triangles - make edges to 3 points
+    // 4. legalize all required edges recursively
 
-        // Remove the old triangle and add the new ones
-        // triangles.erase(std::remove(triangles.begin(), triangles.end(), triangleInsertingInto), triangles.end());
+    // 1:
+    // std::cout << "Finding trianle" << std::endl;
+    Triangle t = FindTriangleByPoint(point, triangles[0]); // triangle we inserting into
+
+    // if point on edge
+    // find ajacent triangle
+    // remove edge
+    // make edges to 4 points
+    // legalize them
+
+    if (t.IsPointOnEdge(point))
+    {
+        std::cout << "point in on the edge" << std::endl;
+        Edge CommonEdgeOfTwoTriangles = t.GetEdgeByPoint(point);
+
+        Triangle oppositeT = FindAjasentTriangleByEdge(CommonEdgeOfTwoTriangles, t);
+
+        // Find the opposite vertex in the triangle
+        Point oppositeVertex = oppositeT.oppositeVertex(CommonEdgeOfTwoTriangles);
+
         DeleteTriangle(t);
+        DeleteTriangle(oppositeT);
 
         addTriangle(Triangle(t.a, t.b, point));
-        addTriangle(Triangle(t.b, t.c, point));
+        addTriangle(Triangle(oppositeVertex, t.b, point));
+        addTriangle(Triangle(oppositeVertex, t.c, point));
         addTriangle(Triangle(t.c, t.a, point));
 
         LegalizeEdge(point, Edge(t.a, t.b));
-        LegalizeEdge(point, Edge(t.b, t.c));
+        LegalizeEdge(point, Edge(t.b, oppositeVertex));
+        LegalizeEdge(point, Edge(oppositeVertex, t.c));
         LegalizeEdge(point, Edge(t.c, t.a));
+        return;
     }
+    std::cout << "point is not on edge" << std::endl;
+    // else:
 
-    std::vector<Triangle> FindAjasentTrianglesByEdge(const Edge&edge)const
-    {
-        std::vector<Triangle> result;
-        for (const auto &triangle : triangles)
-        {
-            if (triangle.containsEdge(edge))
-            {
-                result.push_back(triangle);
-            }
-        }
-        return result;
-    }
-    bool OnExteriourFace(const Edge &edge){
-        int count = 0;
-        for (const auto &triangle : triangles)
-        {
-            if ((triangle.a == edge.start || triangle.a == edge.end) && (triangle.b == edge.start || triangle.b == edge.end) ||
-                (triangle.a == edge.start || triangle.a == edge.end) && (triangle.c == edge.start || triangle.c == edge.end) ||
-                (triangle.b == edge.start || triangle.b == edge.end) && (triangle.c == edge.start || triangle.c == edge.end))
-            {
-                count++;
-            }
-        }
-        return count < 2; // If the edge is part of less than 2 triangles, it's on the exterior
-    }
-    
-    Triangle FindAjasentTriangleByEdge(const Edge &edge, const Triangle &currentTriangle)
-    {
-        for (auto &triangle : triangles)
-        {
-            if (triangle == currentTriangle)
-                continue;
-            if (triangle.containsEdge(edge))
-                return triangle;
-        }
-        for (auto &triangle : triangles)
-            triangle.print();
-        throw std::runtime_error("No adjacent triangle found for the given edge.");
-    }
+    // Remove the old triangle and add the new ones
+    // triangles.erase(std::remove(triangles.begin(), triangles.end(), triangleInsertingInto), triangles.end());
+    DeleteTriangle(t);
 
-    Triangle FindTriangleByPoint(const Point &p, const Triangle &startingTriangle)
-    {
-        Triangle prevt = startingTriangle;
-        Triangle t = startingTriangle;
-        while (true)
-        {
-            // triangle t: a b c
-            double signedAreaAB = Triangle(t.a, t.b, p).SignedArea();
-            double signedAreaBC = Triangle(t.b, t.c, p).SignedArea();
-            double signedAreaCA = Triangle(t.c, t.a, p).SignedArea();
+    addTriangle(Triangle(t.a, t.b, point));
+    addTriangle(Triangle(t.b, t.c, point));
+    addTriangle(Triangle(t.c, t.a, point));
 
-            // Point is inside the triangle or on the edge
-            if (signedAreaAB > 0 && signedAreaBC > 0 && signedAreaCA > 0 &&
-                std::abs(signedAreaAB) < EPSILON &&
-                std::abs(signedAreaBC) < EPSILON &&
-                std::abs(signedAreaCA) < EPSILON)
-            {
+    LegalizeEdge(point, Edge(t.a, t.b));
+    LegalizeEdge(point, Edge(t.b, t.c));
+    LegalizeEdge(point, Edge(t.c, t.a));
+    test();
+}
 
-                return t;
-            }
-
-            prevt = t;
-            // check if clockwise (outside of the triangle)
-            if (signedAreaAB < 0)
-                t = FindAjasentTriangleByEdge(Edge(t.a, t.b), t);
-            else if (signedAreaBC < 0)
-                t = FindAjasentTriangleByEdge(Edge(t.b, t.c), t);
-            else if (signedAreaCA < 0)
-                t = FindAjasentTriangleByEdge(Edge(t.c, t.a), t);
-
-            if (t == prevt)
-                return t;
-        }
-    }
-    void LegalizeEdge(const Point &point, const Edge &edge)
+std::vector<Triangle> FindAjasentTrianglesByEdge(const Edge &edge) const
 {
+    std::vector<Triangle> result;
+    for (const auto &triangle : triangles)
+    {
+        if (triangle.containsEdge(edge))
+        {
+            result.push_back(triangle);
+        }
+    }
+    return result;
+}
+bool OnExteriourFace(const Edge &edge)
+{
+    int count = 0;
+    for (const auto &triangle : triangles)
+    {
+        if ((triangle.a == edge.start || triangle.a == edge.end) && (triangle.b == edge.start || triangle.b == edge.end) ||
+            (triangle.a == edge.start || triangle.a == edge.end) && (triangle.c == edge.start || triangle.c == edge.end) ||
+            (triangle.b == edge.start || triangle.b == edge.end) && (triangle.c == edge.start || triangle.c == edge.end))
+        {
+            count++;
+        }
+    }
+    return count < 2; // If the edge is part of less than 2 triangles, it's on the exterior
+}
+
+Triangle FindAjasentTriangleByEdge(const Edge &edge, const Triangle &currentTriangle)
+{
+    for (auto &triangle : triangles)
+    {
+        if (triangle == currentTriangle)
+            continue;
+        if (triangle.containsEdge(edge))
+            return triangle;
+    }
+    for (auto &triangle : triangles)
+        triangle.print();
+    throw std::runtime_error("No adjacent triangle found for the given edge.");
+}
+
+Triangle FindTriangleByPoint(const Point &p, const Triangle &startingTriangle)
+{
+    // Triangle prevprevt ;
+    // Triangle prevt = startingTriangle;
+    // Triangle t = startingTriangle;
+    // while (true)
+    // {
+    //     // triangle t: a b c
+    //     double signedAreaAB = Triangle(t.a, t.b, p).SignedArea();
+    //     double signedAreaBC = Triangle(t.b, t.c, p).SignedArea();
+    //     double signedAreaCA = Triangle(t.c, t.a, p).SignedArea();
+    //     std::cout << "\nPoint";
+    //     t.print();
+    //     p.print();
+    //     std::cout << "\t____ab:" << signedAreaAB << ", bc:" << signedAreaBC << ", ca:" << signedAreaCA << std::endl;
+    //     // Point is inside the triangle or on the edge
+    //     if ((signedAreaAB > 0 && signedAreaBC > 0 && signedAreaCA > 0) ||
+    //         std::abs(signedAreaAB) < EPSILON ||
+    //         std::abs(signedAreaBC) < EPSILON ||
+    //         std::abs(signedAreaCA) < EPSILON)
+    //     {
+
+    //         return t;
+    //     }
+
+    //     prevt = t;
+    //     // check if clockwise (outside of the triangle)
+    //     if (signedAreaAB < 0)
+    //         t = FindAjasentTriangleByEdge(Edge(t.a, t.b), t);
+    //     else if (signedAreaBC < 0)
+    //         t = FindAjasentTriangleByEdge(Edge(t.b, t.c), t);
+    //     else if (signedAreaCA < 0)
+    //         t = FindAjasentTriangleByEdge(Edge(t.c, t.a), t);
+
+    //     if (t == prevt)
+    //         return t;
+    //     if (t==prevprevt)
+    //         break;
+    // }
+    for (auto &triangle : triangles)
+    {
+        if (triangle.IsPointInside(p))
+            return triangle;
+    }
+}
+void LegalizeEdge(const Point &point, const Edge &edge)
+{
+    std::cout << "Legalizing edge:" << std::endl;
+    edge.print();
     // Find the triangle that contains the edge
     std::vector<Triangle> adjTriangles = FindAjasentTrianglesByEdge(edge);
     if (adjTriangles.size() != 2)
@@ -390,29 +505,21 @@ public:
 
         // Recursively legalize the new edges
         LegalizeEdge(point, Edge(edge.start, oppositeVertex));
-        LegalizeEdge(point, Edge(edge.end, oppositeVertex));
+        LegalizeEdge(point, Edge(oppositeVertex, edge.end));
     }
 }
 void RemoveSuperTriangleTriangles(const Triangle &superTriangle)
 {
-    auto it = triangles.begin();
-    while (it != triangles.end())
+    for (const auto &it : triangles)
     {
-        if (it->containsVertex(superTriangle.a) ||
-            it->containsVertex(superTriangle.b) ||
-            it->containsVertex(superTriangle.c))
-        {
-            it = triangles.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
+        if (it.containsVertex(superTriangle.a) ||
+            it.containsVertex(superTriangle.b) ||
+            it.containsVertex(superTriangle.c))
+            DeleteTriangle(it);
     }
-    
 }
-
-};
+}
+;
 
 Triangle createSuperTriangle(std::vector<Point> points)
 {
@@ -446,41 +553,48 @@ Triangle createSuperTriangle(std::vector<Point> points)
     return Triangle(p1, p2, p3);
 }
 
-
 // Example usage
-int main() {
-    try {
-        
-        
-        // Create super triangle
-        Triangle tr(Point(1,1),Point(3,3),Point(2,4));
+int main()
+{
+    try
+    {
 
+        Point p1 = Point(1, 1);
+        Point p2 = Point(3, 3);
+        Point p3 = Point(2, 4);
+        // Create super triangle
+        Triangle tr(p1, p2, p3);
+        Triangle superT = createSuperTriangle({p1, p2, p3});
+        superT.print();
         // std::cout<<"Tring Result:"<<tr.IsPointInTriangleCircle(Point(8,2))<<std::endl;
         // std::cout<<"Tring Result:"<<tr.IsPointInTriangleCircle(Point(1,2))<<std::endl;
 
-
-
-
-
-
         // // Initialize triangulation with super triangle
-        // Triangulation triangulation;
-        // triangulation.addTriangle(superTriangle);
-        
+        Triangulation triangulation;
+        triangulation.addTriangle(superT);
+        triangulation.InsertPoint(p1);
+        triangulation.print();
+        triangulation.InsertPoint(p2);
+        triangulation.print();
+        triangulation.InsertPoint(p3);
+        triangulation.print();
+        // triangulation.FindTriangleByPoint(Point(2,3),triangulation.getTriangles()[0]).print();
+
         // // Insert all points
         // for (const auto& point : points) {
         //     triangulation.InsertPoint(point);
         // }
-        
+
         // // Remove triangles containing super triangle vertices
         // triangulation.RemoveTrianglesWithSuperTriangleVertices(superTriangle);
-        
+
         // // Print result
         // triangulation.print();
-        
-    } catch (const std::exception& e) {
+    }
+    catch (const std::exception &e)
+    {
         std::cerr << "Error: " << e.what() << std::endl;
     }
-    
+
     return 0;
 }
