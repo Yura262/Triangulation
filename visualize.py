@@ -30,6 +30,8 @@ except ImportError:
 
 class DelaunayGUI:
     def __init__(self):
+        self.enable_click_insert = False   # new flag
+
         # Initialize figure and axis
         self.fig, self.ax = plt.subplots(figsize=(12, 8))
         self.fig.canvas.manager.set_window_title('Interactive Delaunay Triangulation')
@@ -86,7 +88,8 @@ class DelaunayGUI:
         self.ax.set_ylim(-10, 10)
     def setup_controls(self):
         """Setup UI control buttons, textboxes and checkboxes"""
-
+          # Checkbox for display options
+    
         # --- background panels (frames) ---
         # Insert point frame
         self.fig.patches.append(Rectangle((0.05, 0.13), 0.88, 0.06,
@@ -138,21 +141,24 @@ class DelaunayGUI:
         self.btn_enforce = Button(ax_enforce, 'Enforce', color='lightcoral')
         self.btn_enforce.on_clicked(self.enforce_quality_from_inputs)
 
-        # --- Boundary input (start & end as "x,y") ---
-        ax_bstart = plt.axes([0.11, 0.08, 0.15, 0.04])
-        self.tb_bstart = TextBox(ax_bstart, 'Start (x,y)', initial='')
-        ax_bend = plt.axes([0.35, 0.08, 0.15, 0.04])
-        self.tb_bend = TextBox(ax_bend, 'End (x,y)', initial='')
-        ax_bbtn = plt.axes([0.53, 0.08, 0.11, 0.04])
-        self.btn_boundary = Button(ax_bbtn, 'Highlight', color='orange')
-        self.btn_boundary.on_clicked(self.highlight_boundary_from_inputs)
+        # # --- Boundary input (start & end as "x,y") ---
+        # ax_bstart = plt.axes([0.11, 0.08, 0.15, 0.04])
+        # self.tb_bstart = TextBox(ax_bstart, 'Start (x,y)', initial='')
+        # ax_bend = plt.axes([0.35, 0.08, 0.15, 0.04])
+        # self.tb_bend = TextBox(ax_bend, 'End (x,y)', initial='')
+        # ax_bbtn = plt.axes([0.53, 0.08, 0.11, 0.04])
+        # self.btn_boundary = Button(ax_bbtn, 'Highlight', color='orange')
+        # self.btn_boundary.on_clicked(self.highlight_boundary_from_inputs)
 
         # Checkbox for display options
-        ax_check = plt.axes([0.87, 0.30, 0.12, 0.30])
+        ax_check = plt.axes([0.87, 0.30, 0.12, 0.35])  # a bit taller
         labels = ['Vertices', 'Vertex Numbers', 'Triangles',
-                'Triangle Numbers', 'Edges', 'Circumcircles', 'Boundary Highlight']
+                'Triangle Numbers', 'Edges', 'Circumcircles',
+                'Boundary Highlight', 'Click Insert']   # added here
         visibility = [self.show_vertices, self.show_vertex_numbers, self.show_triangles,
-                    self.show_triangle_numbers, self.show_edges, self.show_circumcircles, self.show_boundary_highlight]
+                    self.show_triangle_numbers, self.show_edges,
+                    self.show_circumcircles, self.show_boundary_highlight,
+                    self.enable_click_insert]            # added here
         self.check = CheckButtons(ax_check, labels, visibility)
         self.check.on_clicked(self.update_visibility)
 
@@ -163,6 +169,8 @@ class DelaunayGUI:
     def on_click(self, event):
         """Handle mouse click events"""
         # Only process clicks within the main axes
+        # if not self.enable_click_insert:   # 🔒 only allow if enabled
+        #     return
         if event.inaxes != self.ax:
             return
 

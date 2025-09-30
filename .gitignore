@@ -1,3 +1,4 @@
 build/
 build.zip
 triangulationApp.cp310-win_amd64.pyd
+triangulation.cp310-win_amd64.pyd
