@@ -53,30 +53,30 @@ else:
     input(f"File import failed ({fname}).")
     exit()
 
-# ===== CONSTANTS =====
-a1 = 5     # coefficient for x-derivative
-a2 = 8     # coefficient for y-derivative
+
+a1 = 5
+a2 = 8
 f_const = 2
 N = len(points)
 
-# Initialize global matrices
+
 K = np.zeros((N, N))
 M = np.zeros((N, N))
 F = np.zeros(N)
 
-# ===== LOOP OVER ELEMENTS =====
+
 for e, (g1, g2, g3) in enumerate(triangles):
     x1, y1 = points[g1]
     x2, y2 = points[g2]
     x3, y3 = points[g3]
 
-    # --- 1. Compute area using determinant ---
+    # area
     det = (x2 - x1)*(y3 - y1) - (x3 - x1)*(y2 - y1)
     area = 0.5 * abs(det)
     if area <= 0:
         raise ValueError(f"Element {e}: Invalid orientation or zero area (A={area})")
 
-    # --- 2. Compute b_i, c_i ---
+    # b_i, c_i
     b1 = y2 - y3
     b2 = y3 - y1
     b3 = y1 - y2
@@ -88,7 +88,7 @@ for e, (g1, g2, g3) in enumerate(triangles):
     b = [b1, b2, b3]
     c = [c1, c2, c3]
 
-    # --- 3. Local matrices ---
+    # Local matrices
     Kloc = np.zeros((3, 3))
     Mloc = np.zeros((3, 3))
     for a in range(3):
@@ -100,10 +100,10 @@ for e, (g1, g2, g3) in enumerate(triangles):
         f.write(f"Element {e}:\n{Kloc}\n\n")
     # for row in Kloc:    
     #     print(sum(row))
-    # --- 4. Local right-hand side vector ---
+
     Floc = np.array([2 * area / 3.0] * 3)
 
-    # --- 5. Assembly into global matrices ---
+    #global matrix
     global_indices = [g1, g2, g3]
     for a in range(3):
         I = global_indices[a]
@@ -113,7 +113,7 @@ for e, (g1, g2, g3) in enumerate(triangles):
             K[I, J] += Kloc[a, b_]
             M[I, J] += Mloc[a, b_]
 
-# ===== AFTER ASSEMBLY =====
+
 A = K + M  # final system matrix
 
 # ===== PRINT RESULTS =====
