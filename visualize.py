@@ -20,12 +20,29 @@ from matplotlib.patches import Rectangle
 module_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'build/Debug'))
 sys.path.insert(0, module_dir)
 
-try:
-    import triangulation
-except ImportError:
-    print("Could not import triangulation module. Make sure it's compiled.")
-    print(f"Looking in: {module_dir}")
-    sys.exit(1)
+# Backend selection: set to 1 to use the Python `triangle` package (if installed).
+# If 0, or if `triangle` isn't available, the code will use the C++ `triangulation` module.
+USE_TRIANGLE = 1
+
+# Try to import the optional `triangle` python package if requested.
+triangle = None
+triangulation = None
+if USE_TRIANGLE:
+    try:
+        import triangle as triangle
+        print("Using Python 'triangle' backend for triangulation")
+    except Exception as e:
+        print("Python 'triangle' package not available or failed to import:", e)
+        print("Will try to use the C++ 'triangulation' module instead.")
+
+# If triangle not available (or not requested), fall back to the C++ extension module.
+if triangle is None:
+    try:
+        import triangulation
+    except ImportError:
+        print("Could not import triangulation module. Make sure it's compiled.")
+        print(f"Looking in: {module_dir}")
+        sys.exit(1)
 
 
 class DelaunayGUI:
@@ -120,6 +137,10 @@ class DelaunayGUI:
         self.btn_update = Button(ax_update, 'Update Plot', color='lightblue', hovercolor='blue')
         self.btn_update.on_clicked(self.update_plot)
 
+        ax_export = plt.axes([0.54, 0.14, 0.10, 0.04])
+        self.btn_export = Button(ax_export, 'Export Data', color='lightyellow', hovercolor='gold')
+        self.btn_export.on_clicked(self.export_data)
+
         # --- Insert point fields ---
         ax_ins_x = plt.axes([0.67, 0.14, 0.05, 0.04])
         self.tb_ins_x = TextBox(ax_ins_x, 'X ', initial='')
@@ -203,6 +224,16 @@ class DelaunayGUI:
 
     def enforce_quality_from_inputs(self, event):
         """Read min angle & max area; call C++ enforce routine and update points/triangles"""
+        # This operation relies on the C++ triangulation object to perform in-place
+        # quality enforcement. It is not supported when using the Python `triangle`
+        # backend.
+        if USE_TRIANGLE and 'triangle' in globals() and triangle is not None:
+            # When using the Python `triangle` backend, read min-angle/max-area from
+            # the UI fields and re-run triangulation; triangle options are applied
+            # inside compute_triangulation() which reads the textboxes.
+            self.compute_triangulation()
+            self.update_plot()
+            return
         try:
             a_str = self.tb_angle.text.strip()
             ar_str = self.tb_area.text.strip()
@@ -272,6 +303,15 @@ class DelaunayGUI:
             
     def highlight_boundary_from_inputs(self, event):
         """Parse start/end, compute boundary via C++ and draw it"""
+        # Boundary extraction uses the C++ triangulation object API. Not available
+        # when using the Python `triangle` backend.
+        if USE_TRIANGLE and 'triangle' in globals() and triangle is not None:
+            # Boundary extraction is provided by the C++ backend. For the Python
+            # `triangle` backend we can't run boundary extraction here; however
+            # re-run triangulation so any UI parameters (if relevant) are applied.
+            self.compute_triangulation()
+            self.update_plot()
+            return
         try:
             s = self.tb_bstart.text.strip()
             e = self.tb_bend.text.strip()
@@ -314,7 +354,41 @@ class DelaunayGUI:
             self.triangles = []
             self.triangulation_obj = None
             return
+        # If requested and available, use the Python `triangle` package as backend.
+        if USE_TRIANGLE and 'triangle' in globals() and triangle is not None:
+            try:
+                pts = np.array(self.points)
+                A = {'vertices': pts}
+                # 'Q' = quiet; no quality flags by default. Users can change USE_TRIANGLE
+                # and further options in code if needed.
+                minAngle=self.tb_angle.text.strip()
+                maxArea=self.tb_area.text.strip()
+                t = triangle.triangulate(A, f'q{minAngle}a{maxArea}D')
 
+                verts = t.get('vertices', pts)
+                tris = t.get('triangles', [])
+
+                # Update points to the vertices returned by triangle (it may have
+                # added Steiner points). Convert to list of tuples.
+                self.points = [(float(v[0]), float(v[1])) for v in verts]
+
+                # Convert triangle indices to Python lists
+                new_tris = []
+                if tris is not None:
+                    # tris may be a numpy array or list; normalize it
+                    for tri_idx in tris:
+                        new_tris.append([int(tri_idx[0]), int(tri_idx[1]), int(tri_idx[2])])
+                self.triangles = new_tris
+                # No C++ triangulation object when using Python backend
+                self.triangulation_obj = None
+                return
+            except Exception as e:
+                print("triangle backend error:", e)
+                self.triangles = []
+                self.triangulation_obj = None
+                return
+
+        # Fallback: use the C++ triangulation module
         try:
             # Create points for C++
             cpp_points = [triangulation.Point(x, y) for x, y in self.points]
@@ -350,6 +424,45 @@ class DelaunayGUI:
             print(f"Triangulation error: {e}")
             self.triangles = []
             self.triangulation_obj = None
+
+    def export_data(self, event):
+        """Export points and triangles to a file in the specified format"""
+        if not self.points:
+            print("No points to export")
+            return
+
+        try:
+            # Generate filename with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"triangulation_export_{timestamp}.txt"
+            
+            # Build file content
+            lines = []
+            
+            # Export points (numbered)
+            lines.append("# Points")
+            for i, (x, y) in enumerate(self.points):
+                lines.append(f"point{i}({x},{y})")
+            
+            lines.append("")  # blank line separator
+            
+            # Export triangles (numbered, with point indices)
+            lines.append("# Triangles")
+            for i, tri_indices in enumerate(self.triangles):
+                if len(tri_indices) == 3:
+                    p1, p2, p3 = tri_indices
+                    lines.append(f"triangle{i}({p1},{p2},{p3})")
+            
+            # Write to file
+            with open(filename, 'w') as f:
+                f.write('\n'.join(lines))
+            
+            print(f"Data exported to: {filename}")
+            print(f"Points: {len(self.points)}, Triangles: {len(self.triangles)}")
+            
+        except Exception as e:
+            print(f"Export error: {e}")
 
     def update_plot(self, event=None):
         """Update the plot with current points and triangulation"""
@@ -613,6 +726,10 @@ def main():
     print("- Use the checkboxes to toggle display options (Boundary Highlight toggles the boundary view)")
     print("- Use buttons to clear, reset view, or add random/grid points")
     print("=" * 50)
+
+    # Show which backend is active
+    backend = "Python 'triangle' package" if USE_TRIANGLE and 'triangle' in globals() and triangle is not None else "C++ 'triangulation' extension"
+    print(f"Triangulation backend: {backend}")
 
     gui = DelaunayGUI()
     plt.show()
