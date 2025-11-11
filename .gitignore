@@ -1,4 +1,4 @@
 build/
 build.zip
-triangul/triangulation.zip
-triangulation_export_20251110_201323.txt
+triangulationApp.cp310-win_amd64.pyd
+triangulation.cp310-win_amd64.pyd
