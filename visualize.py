@@ -190,8 +190,8 @@ class DelaunayGUI:
     def on_click(self, event):
         """Handle mouse click events"""
         # Only process clicks within the main axes
-        # if not self.enable_click_insert:   # 🔒 only allow if enabled
-        #     return
+        if not self.enable_click_insert:   # 🔒 only allow if enabled
+            return
         if event.inaxes != self.ax:
             return
 
